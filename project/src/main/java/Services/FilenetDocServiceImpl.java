@@ -3,6 +3,9 @@ package Services;
 import org.springframework.web.multipart.MultipartFile;
 import javax.security.auth.Subject;
 import java.io.InputStream;
+import java.util.ArrayList;
+import java.util.List;
+
 import com.filenet.api.collection.ContentElementList;
 import com.filenet.api.constants.AutoClassify;
 import com.filenet.api.constants.CheckinType;
@@ -19,38 +22,44 @@ import com.filenet.api.core.Document;
 
 @Service
 public class FilenetDocServiceImpl implements FilenetDocService{
+
     @Override
-    public String uploadToFileNet(MultipartFile file, String title) throws Exception {
-        // Connexion à FileNet
+    public List<String> uploadToFileNet(List<MultipartFile> files, List<String> titles) throws Exception {
+        List<String> documentIds = new ArrayList<>();
+
         Connection conn = Factory.Connection.getConnection("http://192.168.56.101:9080/wsi/FNCEWS40MTOM/");
         Subject subject = UserContext.createSubject(conn, "GCD Administrator", "P@ssw0rd", null);
         UserContext.get().pushSubject(subject);
 
-        Domain domain = Factory.Domain.fetchInstance(conn, null, null);
-        ObjectStore os = Factory.ObjectStore.fetchInstance(domain, "DemoObjectStore", null);
+        try {
+            Domain domain = Factory.Domain.fetchInstance(conn, null, null);
+            ObjectStore os = Factory.ObjectStore.fetchInstance(domain, "DemoObjectStore", null);
 
-        // Création du document
-        Document doc = Factory.Document.createInstance(os, ClassNames.DOCUMENT);
-        doc.getProperties().putValue("DocumentTitle", title);
-        doc.set_MimeType(file.getContentType());
+            for (int i = 0; i < files.size(); i++) {
+                MultipartFile file = files.get(i);
+                String title = titles.get(i);
 
-        // Contenu du fichier
-        ContentTransfer ct = Factory.ContentTransfer.createInstance();
-        InputStream inputStream = file.getInputStream();
-        ct.setCaptureSource(inputStream);
-        ContentElementList contentList = Factory.ContentElement.createList();
-        contentList.add(ct);
-        doc.set_ContentElements(contentList);
+                Document doc = Factory.Document.createInstance(os, ClassNames.DOCUMENT);
+                doc.getProperties().putValue("DocumentTitle", title);
+                doc.set_MimeType(file.getContentType());
 
-        // Enregistrement dans FileNet
-        doc.checkin(AutoClassify.DO_NOT_AUTO_CLASSIFY, CheckinType.MAJOR_VERSION);
-        doc.save(RefreshMode.REFRESH); // Utilise REFRESH pour récupérer les propriétés comme l'ID
+                ContentTransfer ct = Factory.ContentTransfer.createInstance();
+                InputStream inputStream = file.getInputStream();
+                ct.setCaptureSource(inputStream);
+                ContentElementList contentList = Factory.ContentElement.createList();
+                contentList.add(ct);
+                doc.set_ContentElements(contentList);
 
-        String documentId = doc.get_Id().toString();
+                doc.checkin(AutoClassify.DO_NOT_AUTO_CLASSIFY, CheckinType.MAJOR_VERSION);
+                doc.save(RefreshMode.REFRESH);
 
-        UserContext.get().popSubject();
+                documentIds.add(doc.get_Id().toString());
+            }
+        } finally {
+            UserContext.get().popSubject();
+        }
 
-        return documentId;  // 🔁 Retourne l'ID généré
+        return documentIds;
     }
 
     @Override
@@ -72,12 +81,12 @@ public class FilenetDocServiceImpl implements FilenetDocService{
             }
 
             ContentTransfer ct = (ContentTransfer) contentList.get(0);
-            return ct.accessContentStream();  // Retourne le flux
+            return ct.accessContentStream();
 
         } catch (Exception e) {
             throw e;
         } finally {
-            uc.popSubject();  // Très important pour libérer proprement le contexte FileNet
+            uc.popSubject();
         }
     }
     @Override
